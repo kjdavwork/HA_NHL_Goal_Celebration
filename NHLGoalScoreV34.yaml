@@ -1,0 +1,419 @@
+alias: NHLGoalScoreV34
+description: >
+  ESPN loop + NHL API fallback - PRODUCTION VERSION Silent operation by default.
+  Enable input_boolean.nhl_goal_debug_mode for debugging.
+  V34: Fixed period name string comparison bug.
+mode: queued
+max: 5
+sequence:
+  - variables:
+      initial_light_state: "{{ states('light.lr_lifx_1') }}"
+      goal_data_captured: false
+      goal_play_text: ""
+      captured_clock: ""
+      captured_period: ""
+      data_source: none
+  - parallel:
+      - sequence:
+          - delay:
+              seconds: 45
+          - target:
+              entity_id: media_player.google_home_display
+            data:
+              media:
+                media_content_id: "{\"app_name\": \"youtube\", \"media_id\": \"MBxxCDtBXlY\"}"
+                media_content_type: cast
+            action: media_player.play_media
+          - target:
+              entity_id: light.lr_lifx_1
+            data:
+              brightness_pct: 100
+              rgb_color:
+                - 17
+                - 0
+                - 255
+            action: light.turn_on
+          - repeat:
+              count: 5
+              sequence:
+                - target:
+                    entity_id: light.lr_lifx_1
+                  action: light.turn_off
+                - delay:
+                    milliseconds: 1500
+                - target:
+                    entity_id: light.lr_lifx_1
+                  data:
+                    brightness: 255
+                    rgb_color:
+                      - 17
+                      - 0
+                      - 255
+                  action: light.turn_on
+                - delay:
+                    milliseconds: 1500
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ initial_light_state == 'on' }}"
+                sequence:
+                  - target:
+                      entity_id: light.lr_lifx_1
+                    data:
+                      brightness_pct: 100
+                      rgb_color:
+                        - 255
+                        - 255
+                        - 255
+                      transition: 2
+                    action: light.turn_on
+              - conditions:
+                  - condition: template
+                    value_template: "{{ initial_light_state == 'off' }}"
+                sequence:
+                  - target:
+                      entity_id: light.lr_lifx_1
+                    data:
+                      brightness_pct: 100
+                      rgb_color:
+                        - 255
+                        - 255
+                        - 255
+                    action: light.turn_on
+                  - delay:
+                      milliseconds: 500
+                  - target:
+                      entity_id: light.lr_lifx_1
+                    action: light.turn_off
+      - sequence:
+          - repeat:
+              while:
+                - condition: template
+                  value_template: "{{ repeat.index <= 9 }}"
+              sequence:
+                - variables:
+                    current_play: >-
+                      {{ state_attr('sensor.lightning', 'last_play') |
+                      default('', true) }}
+                    current_play_lower: "{{ current_play | lower }}"
+                    is_goal: >-
+                      {{ 'goal' in current_play_lower and 'goalie' not in
+                      current_play_lower }}
+                - if:
+                    - condition: template
+                      value_template: "{{ is_goal }}"
+                  then:
+                    - variables:
+                        goal_data_captured: true
+                        goal_play_text: "{{ current_play }}"
+                        captured_clock: >-
+                          {{ state_attr('sensor.lightning', 'clock') |
+                          default('') | string }}
+                        captured_period: >-
+                          {{ state_attr('sensor.lightning', 'quarter') |
+                          default('') | string | trim }}
+                        captured_iteration: "{{ repeat.index }}"
+                        data_source: ESPN
+                - delay:
+                    seconds: 5
+  - variables:
+      nhl_scorer: >-
+        {{ state_attr('sensor.lightning_nhl', 'scoring_player_name') |
+        default('', true) }}
+      nhl_scorer_number: >-
+        {{ state_attr('sensor.lightning_nhl', 'scoring_player_number') |
+        default('', true) }}
+      nhl_assist1: >-
+        {{ state_attr('sensor.lightning_nhl', 'assist1_player_name') |
+        default('', true) }}
+      nhl_assist1_number: >-
+        {{ state_attr('sensor.lightning_nhl', 'assist1_player_number') |
+        default('', true) }}
+      nhl_assist2: >-
+        {{ state_attr('sensor.lightning_nhl', 'assist2_player_name') |
+        default('', true) }}
+      nhl_assist2_number: >-
+        {{ state_attr('sensor.lightning_nhl', 'assist2_player_number') |
+        default('', true) }}
+      nhl_goal_type: >-
+        {{ state_attr('sensor.lightning_nhl', 'goal_type') | default('', true)
+        }}
+      nhl_goal_tracked_team: >-
+        {{ state_attr('sensor.lightning_nhl', 'goal_tracked_team') |
+        default(false, true) }}
+      nhl_away_score: >-
+        {{ state_attr('sensor.lightning_nhl', 'away_score') | default(0, true) |
+        int }}
+      nhl_home_score: >-
+        {{ state_attr('sensor.lightning_nhl', 'home_score') | default(0, true) |
+        int }}
+      espn_team_score: >-
+        {{ state_attr('sensor.lightning', 'team_score') | default(0, true) | int
+        }}
+      espn_team_homeaway: >-
+        {{ state_attr('sensor.lightning', 'team_homeaway') | default('', true)
+        }}
+      nhl_current_period: >-
+        {{ state_attr('sensor.lightning_nhl', 'current_period') | default(0,
+        true) | int }}
+      nhl_lightning_score: |-
+        {% if espn_team_homeaway == 'home' %}
+          {{ nhl_home_score }}
+        {% else %}
+          {{ nhl_away_score }}
+        {% endif %}
+      nhl_has_scorer: "{{ nhl_scorer not in ['', 'None', none] }}"
+      nhl_is_lightning_goal: "{{ nhl_goal_tracked_team == true }}"
+      nhl_score_matches: "{{ nhl_lightning_score | int == espn_team_score }}"
+      nhl_fallback_valid: "{{ nhl_has_scorer and nhl_is_lightning_goal and nhl_score_matches }}"
+      use_nhl_fallback: "{{ not goal_data_captured and nhl_fallback_valid }}"
+  - if:
+      - condition: template
+        value_template: "{{ use_nhl_fallback }}"
+    then:
+      - variables:
+          goal_data_captured: true
+          data_source: NHL_API
+          captured_period: "{{ nhl_current_period | string | trim }}"
+          captured_clock: ""
+  - variables:
+      clock_clean: |-
+        {% if captured_clock and ' - ' in captured_clock %}
+          {{ captured_clock.split(' - ')[0].strip() }}
+        {% else %}
+          {{ captured_clock }}
+        {% endif %}
+      period_name: |-
+        {% set p = captured_period | string | trim %}
+        {% if p == '1' %}
+          first period
+        {% elif p == '2' %}
+          second period
+        {% elif p == '3' %}
+          third period
+        {% elif p == '4' %}
+          overtime
+        {% elif p == '5' %}
+          second overtime
+        {% elif p == '6' %}
+          third overtime
+        {% else %}
+          period {{ p }}
+        {% endif %}
+      goal_scorer: |-
+        {% if data_source == 'ESPN' %}
+          {% set play = goal_play_text %}
+          {% set play_lower = play | lower %}
+          {% if 'goal' in play_lower and 'goalie' not in play_lower %}
+            {% if 'Goal' in play %}
+              {{ play.split('Goal')[0].strip() }}
+            {% elif 'goal' in play %}
+              {{ play.split('goal')[0].strip() }}
+            {% else %}
+              Unknown
+            {% endif %}
+          {% else %}
+            Unknown
+          {% endif %}
+        {% elif data_source == 'NHL_API' %}
+          {{ nhl_scorer }}
+        {% else %}
+          Unknown
+        {% endif %}
+      goal_scorer_number: |-
+        {% if data_source == 'NHL_API' %}
+          {{ nhl_scorer_number }}
+        {% else %}
+          
+        {% endif %}
+      assist_raw: |-
+        {% if data_source == 'ESPN' %}
+          {% set play = goal_play_text %}
+          {% if 'assists:' in play %}
+            {% set assist_part = play.split('assists:')[1].strip() %}
+            {{ assist_part }}
+          {% else %}
+            none
+          {% endif %}
+        {% else %}
+          
+        {% endif %}
+      has_assists: |-
+        {% if data_source == 'ESPN' %}
+          {% set raw = assist_raw | lower %}
+          {{ raw not in ['none', '', 'null'] and 'none' not in raw }}
+        {% elif data_source == 'NHL_API' %}
+          {{ nhl_assist1 not in ['', 'None', none] }}
+        {% else %}
+          false
+        {% endif %}
+      assist1_name: |-
+        {% if data_source == 'ESPN' %}
+          {% if has_assists %}
+            {% set parts = assist_raw.split(',') %}
+            {% if parts | length > 0 %}
+              {% set first = parts[0].strip() %}
+              {% if '(' in first %}
+                {{ first.split('(')[0].strip() }}
+              {% else %}
+                {{ first }}
+              {% endif %}
+            {% else %}
+              
+            {% endif %}
+          {% else %}
+            
+          {% endif %}
+        {% elif data_source == 'NHL_API' %}
+          {{ nhl_assist1 }}
+        {% else %}
+          
+        {% endif %}
+      assist1_number: |-
+        {% if data_source == 'NHL_API' %}
+          {{ nhl_assist1_number }}
+        {% else %}
+          
+        {% endif %}
+      assist2_name: |-
+        {% if data_source == 'ESPN' %}
+          {% if has_assists %}
+            {% set parts = assist_raw.split(',') %}
+            {% if parts | length > 1 %}
+              {% set second = parts[1].strip() %}
+              {% if '(' in second %}
+                {{ second.split('(')[0].strip() }}
+              {% else %}
+                {{ second }}
+              {% endif %}
+            {% else %}
+              
+            {% endif %}
+          {% else %}
+            
+          {% endif %}
+        {% elif data_source == 'NHL_API' %}
+          {{ nhl_assist2 }}
+        {% else %}
+          
+        {% endif %}
+      assist2_number: |-
+        {% if data_source == 'NHL_API' %}
+          {{ nhl_assist2_number }}
+        {% else %}
+          
+        {% endif %}
+  - if:
+      - condition: state
+        entity_id: input_boolean.nhl_goal_debug_mode
+        state: "on"
+    then:
+      - data:
+          title: Goal Debug - V34
+          message: >
+            === DATA SOURCE: {{ data_source }} ===
+
+
+            ESPN Loop Results:
+
+            - Data captured: {{ 'ESPN' if data_source == 'ESPN' else 'False' }}
+
+            - Iteration: {{ captured_iteration if data_source == 'ESPN' else
+            'N/A' }}
+
+            - Raw last_play: {{ goal_play_text if goal_play_text else '(empty)'
+            }}
+
+
+            NHL API Fallback Check:
+
+            - Has scorer: {{ nhl_has_scorer }}
+
+            - Is Lightning goal: {{ nhl_is_lightning_goal }}
+
+            - Team home/away: {{ espn_team_homeaway }}
+
+            - Score matches: {{ nhl_score_matches }} (NHL Lightning: {{
+            nhl_lightning_score }}, ESPN: {{ espn_team_score }})
+
+            - NHL away: {{ nhl_away_score }}, NHL home: {{ nhl_home_score }}
+
+            - Fallback valid: {{ nhl_fallback_valid }}
+
+            - Fallback used: {{ use_nhl_fallback }}
+
+
+            Final Goal Data:
+
+            - Scorer: {{ goal_scorer }}{{ ' (#' + goal_scorer_number|string +
+            ')' if goal_scorer_number else '' }}
+
+            - Period: {{ captured_period }} ({{ period_name }})
+
+            - Clock: {{ clock_clean if clock_clean else 'N/A' }}
+
+            - Goal Type: {{ nhl_goal_type if data_source == 'NHL_API' else 'N/A'
+            }}
+
+
+            Assists:
+
+            - Has assists: {{ has_assists }}
+
+            - Assist 1: {{ assist1_name }}{{ ' (#' + assist1_number|string + ')'
+            if assist1_number else '' }}
+
+            - Assist 2: {{ assist2_name }}{{ ' (#' + assist2_number|string + ')'
+            if assist2_number else '' }}
+        action: persistent_notification.create
+  - target:
+      entity_id: media_player.google_home_display
+    action: media_player.media_stop
+  - delay:
+      seconds: 2
+  - if:
+      - condition: template
+        value_template: "{{ goal_data_captured and goal_scorer != 'Unknown' }}"
+    then:
+      - target:
+          entity_id: media_player.google_home_display
+        data:
+          message: |-
+            {% if clock_clean %}
+              Tampa Bay Lightning goal! At {{ clock_clean }} of the {{ period_name }}. Scored by {{ 'number ' + goal_scorer_number|string + ', ' if goal_scorer_number else '' }}{{ goal_scorer }}!
+            {% else %}
+              Tampa Bay Lightning goal in the {{ period_name }}! Scored by {{ 'number ' + goal_scorer_number|string + ', ' if goal_scorer_number else '' }}{{ goal_scorer }}!
+            {% endif %}
+          options:
+            voice: Matthew
+            engine: neural
+        action: tts.amazon_polly_say
+  - delay:
+      seconds: 10
+  - target:
+      device_id: e1fdc7415c5e91f01e3d4ab7d05add84
+    action: media_player.turn_off
+  - delay:
+      seconds: 5
+  - if:
+      - condition: template
+        value_template: "{{ goal_data_captured and has_assists and assist1_name != '' }}"
+    then:
+      - target:
+          entity_id: media_player.google_home_display
+        data:
+          message: |-
+            {% if assist2_name != '' %}
+              Assisted by {{ 'number ' + assist1_number|string + ', ' if assist1_number else '' }}{{ assist1_name }}, and {{ 'number ' + assist2_number|string + ', ' if assist2_number else '' }}{{ assist2_name }}!
+            {% else %}
+              Assisted by {{ 'number ' + assist1_number|string + ', ' if assist1_number else '' }}{{ assist1_name }}!
+            {% endif %}
+          options:
+            voice: Matthew
+            engine: neural
+        action: tts.amazon_polly_say
+      - delay:
+          seconds: 10
+      - target:
+          device_id: e1fdc7415c5e91f01e3d4ab7d05add84
+        action: media_player.turn_off

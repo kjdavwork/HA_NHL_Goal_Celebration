@@ -1,0 +1,24 @@
+alias: NHL Goal Score Trigger
+description: Trigger goal celebration when your NHL team scores
+triggers:
+  - entity_id: sensor.lightning  # CHANGE THIS to your team's ESPN sensor
+    attribute: team_score
+    trigger: state
+    enabled: true
+conditions:
+  - condition: template
+    value_template: |-
+      {{ trigger.to_state.attributes.team_score | int > 
+         trigger.from_state.attributes.team_score | int }}
+  - condition: or
+    conditions:
+      - condition: state
+        entity_id: sensor.lightning  # CHANGE THIS to your team's ESPN sensor
+        state: IN
+      - condition: state
+        entity_id: sensor.lightning  # CHANGE THIS to your team's ESPN sensor
+        state: POST
+actions:
+  - action: script.nhlgoalscorev34
+    data: {}
+mode: single
