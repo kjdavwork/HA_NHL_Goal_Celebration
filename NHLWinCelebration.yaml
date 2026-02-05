@@ -1,0 +1,95 @@
+alias: LightningWinCelebration_V1.4
+description: >-
+  Triggers when the game ends and the Lightning win. Blue light celebration with
+  proper state restoration.
+triggers:
+  - entity_id: sensor.lightning
+    attribute: clock
+    to: Final
+    trigger: state
+conditions:
+  - condition: template
+    value_template: |
+      {{ state_attr('sensor.lightning', 'team_score') | int >
+         state_attr('sensor.lightning', 'opponent_score') | int }}
+actions:
+  - variables:
+      initial_light_state: "{{ states('light.lr_lifx_1') }}"
+  - target:
+      entity_id: light.lr_lifx_1
+    data:
+      brightness_pct: 100
+      rgb_color:
+        - 17
+        - 0
+        - 255
+    action: light.turn_on
+  - data:
+      message: >
+        Tampa Bay Lightning win! Final score {{ state_attr('sensor.lightning',
+        'team_score') }} to {{ state_attr('sensor.lightning', 'opponent_score')
+        }}. That is the game!
+      options:
+        voice: Matthew
+        engine: neural
+    target:
+      entity_id: media_player.google_home_display
+    action: tts.amazon_polly_say
+  - repeat:
+      count: 5
+      sequence:
+        - target:
+            entity_id: light.lr_lifx_1
+          action: light.turn_off
+        - delay:
+            milliseconds: 1500
+        - target:
+            entity_id: light.lr_lifx_1
+          data:
+            brightness: 255
+            rgb_color:
+              - 17
+              - 0
+              - 255
+          action: light.turn_on
+        - delay:
+            milliseconds: 1500
+  - delay:
+      seconds: 2
+  - target:
+      device_id: e1fdc7415c5e91f01e3d4ab7d05add84
+    action: media_player.turn_off
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ initial_light_state == 'on' }}"
+        sequence:
+          - target:
+              entity_id: light.lr_lifx_1
+            data:
+              brightness_pct: 100
+              rgb_color:
+                - 255
+                - 255
+                - 255
+              transition: 2
+            action: light.turn_on
+      - conditions:
+          - condition: template
+            value_template: "{{ initial_light_state == 'off' }}"
+        sequence:
+          - target:
+              entity_id: light.lr_lifx_1
+            data:
+              rgb_color:
+                - 255
+                - 255
+                - 255
+              brightness_pct: 100
+            action: light.turn_on
+          - delay:
+              milliseconds: 500
+          - target:
+              entity_id: light.lr_lifx_1
+            action: light.turn_off
+mode: single
