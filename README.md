@@ -2,110 +2,110 @@
 
 **Transform your home into a stadium when your favorite NHL team scores!**
 
-Instant goal horn, lights, and TTS announcements with 97.6% reliability.
+Goal video, flashing lights in your team's colors, and a spoken announcement of the scorer, assists, time and period, timed to match your TV stream's delay.
 
 ---
 
 ## 🎯 What It Does
 
 When your NHL team scores:
-- 🔊 **Goal horn plays** (45-second streaming delay)
+- 🔊 **Goal video plays** on your speaker or display, about 45 seconds after the goal so it lines up with your stream
 - 💡 **Smart lights flash** in team colors
-- 📢 **TTS announces** scorer, assists, time, and period
-- 🏆 **Win celebration** with special light show
+- 📢 **TTS announces** the scorer, time and period, then the assists
+- 🏆 **Win celebration** with a win video, light show and the final score (beta)
 
 ---
 
 ## ✨ Features
 
-- ✅ **97.6% success rate** (tested over 40+ goals)
-- ✅ **Dual-source reliability** - ESPN primary, NHL API fallback
-- ✅ **Smart polling loop** - Adapts to ESPN API timing
+- ✅ **Two data sources** - ESPN first, NHL API as the fallback
+- ✅ **Polling loop** - checks ESPN every 5 seconds until the goal details show up
 - ✅ **Natural announcements** - "second period" not "period 2"
-- ✅ **Works everywhere** - Home and away games
-- ✅ **Optional debug mode** - Monitor performance without code changes
-- ✅ **Light restoration** - Returns to previous state after celebration
+- ✅ **Assists that arrive late** - re-checks the NHL API before announcing assists
+- ✅ **Works for home and away games**
+- ✅ **Optional debug mode** - a notification with all the details after each goal
+- ✅ **Light restoration** - the light goes back on or off the way it was
+- ✅ **One settings block** - your team, light, speaker and colors are set in one place at the top of each file
 
 ---
 
 ## 📋 Requirements
 
-- Home Assistant (2023.x or newer)
-- ESPN sensor integration (via HACS)
-- NHL API sensor integration (via HACS)
-- Smart light (LIFX, Hue, etc.)
-- Media player (Google Home, Chromecast, Echo)
-- TTS service (Amazon Polly, Google TTS, etc.)
+- **Home Assistant 2024.10 or newer** (the YAML uses the newer `triggers:` / `actions:` format)
+- **[Team Tracker](https://github.com/vasqued2/ha-teamtracker)** (ESPN data, install via HACS)
+- **[hass-nhlapi](https://github.com/JayBlackedOut/hass-nhlapi)** (NHL API data, install via HACS)
+- A smart light with color support (LIFX, Hue, etc.)
+- A Google Home / Nest / Chromecast speaker or display (plays YouTube via cast)
+- A TTS service (Amazon Polly is used here; others work with a small change)
+
+**Tested with:** Home Assistant 2026.10.1, Team Tracker v0.18.4, hass-nhlapi v1.2.1b (pre-release, 5-second update interval), Google Home display, LIFX bulb, Amazon Polly.
+
+---
+
+## 📁 Files
+
+| File | What it is |
+|---|---|
+| `NHL_Goal_Celebration_Script.yaml` | The main goal celebration script |
+| `NHL_Goal_Automation.yaml` | Automation that starts the script when your team's score goes up |
+| `NHL_Win_Celebration.yaml` | Win celebration automation (optional, beta) |
+| `NHL_Goal_Celebration_Setup_Guide.md` | Step-by-step installation and customization |
+| `CHANGELOG.md` | What changed in each version |
+
+Last season's files (V34) are kept under the [`v34-2025-26-season`](https://github.com/kjdavwork/HA_NHL_Goal_Celebration/tree/v34-2025-26-season) tag.
 
 ---
 
 ## 🚀 Quick Start
 
-1. **Download the files:**
-   - `NHLGoalScoreV34.yaml` - Main celebration script
-   - `NHL_Goal_Celebration_Setup_Guide.md` - Detailed installation
+1. Install Team Tracker and hass-nhlapi for your team.
+2. Create the debug toggle helper (`input_boolean.nhl_goal_debug_mode`).
+3. Paste `NHL_Goal_Celebration_Script.yaml` into a new script, change the settings block at the top, and save it as **NHL Goal Celebration** (entity `script.nhl_goal_celebration`).
+4. Paste `NHL_Goal_Automation.yaml` into a new automation and set your team's sensor.
+5. Optional: paste `NHL_Win_Celebration.yaml` into another automation.
 
-2. **Follow the setup guide** for step-by-step installation
-
-3. **Customize for your team:**
-   - Change sensor names
-   - Update device IDs
-   - Set team colors
-   - Add your team's goal horn
-
-4. **Enjoy the game!** 🏒
-
----
-
-## 📚 Documentation
-
-**[Complete Setup Guide](NHL_Goal_Celebration_Setup_Guide.md)** - Full installation instructions with troubleshooting
+Every place you need to change is marked **CHANGE** in the YAML. The **[Setup Guide](NHL_Goal_Celebration_Setup_Guide.md)** walks through each step.
 
 ---
 
 ## 🎥 How It Works
 
-When your team's score increases, the automation:
-1. Waits 45 seconds (streaming delay)
-2. Polls ESPN API every 5 seconds looking for goal details
-3. Falls back to NHL API if ESPN is unavailable
-4. Parses scorer, assists, period, and time
-5. Triggers celebrations with complete announcement
-
-The polling loop handles ESPN's unpredictable update timing, achieving 97.6% reliability across extensive testing.
-
----
-
-## 🛠️ Customization
-
-Easily customize:
-- **Team colors** - RGB values for your team
-- **Goal horn** - Any YouTube video
-- **Streaming delay** - Adjust for your service (30-60 seconds)
-- **TTS voice** - Choose preferred voice/engine
-- **Light devices** - Support for multiple brands
+When your team's score goes up, the script:
+1. Waits 45 seconds (streaming delay) and, at the same time, checks ESPN's latest play every 5 seconds (9 checks) for the goal details
+2. Uses the NHL API if ESPN never showed the goal (this happens, for example, with some overtime winners)
+3. Plays the goal video and flashes the lights for 30 seconds
+4. Announces the scorer, time and period
+5. Re-checks the NHL API for assists (they often show up a minute or more after the goal) and announces them
 
 ---
 
 ## 🏒 Tested With
 
-- **Games:** 10+
-- **Goals:** 40+
-- **Success Rate:** 97.6%
-- **Period:** December 2025 - January 2026
-- **Status:** Production-ready (V34)
+- **V34 (2025–26 season):** 10+ games, 40+ goals, 97.6% of goals announced correctly
+- **V36 (2026–27 season):** working live on 6+ goals as of October 2026
+- **Win celebration V1.6:** not yet run in a real game (beta)
+
+---
+
+## ⚠️ Known Limitations
+
+- **Goals close together:** a celebration takes about 2 minutes. A second goal during that time doesn't get its own celebration.
+- **Opponent scores right after you:** if the other team scores within about 45 seconds, ESPN's latest play may be their goal, and the wrong scorer could be announced. Rare.
+- **No clock from the NHL API:** when the NHL API fallback is used, the announcement gives the period but not the time.
+- **Assists can be missed:** if the NHL API hasn't posted them about 80–90 seconds after the goal, none are announced.
+- **Shootouts:** not tested.
 
 ---
 
 ## 🤝 Contributing
 
-Have improvements or adaptations for other sports? Contributions welcome!
+Have improvements or adaptations for other sports? Issues and pull requests are welcome!
 
 ---
 
 ## 📄 License
 
-Free to use, modify, and share. Attribution appreciated but not required.
+[MIT](LICENSE) - free to use, modify, and share.
 
 ---
 

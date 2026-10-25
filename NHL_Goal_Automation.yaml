@@ -1,24 +1,45 @@
-alias: NHL Goal Score Trigger
-description: Trigger goal celebration when your NHL team scores
+# =============================================================================
+# NHL Goal Celebration - goal trigger automation
+# =============================================================================
+# Starts script.nhl_goal_celebration when your team's ESPN score goes up
+# during (or right at the end of) a game.
+#
+# Install: Settings -> Automations & Scenes -> + Create Automation ->
+#          Create new automation -> (three-dot menu) Edit in YAML -> paste -> Save.
+#
+# CHANGE: sensor.lightning appears 3 times below. Replace all three with your
+# team's Team Tracker (ESPN) sensor - the same one as espn_sensor in the script.
+# (Triggers can't use variables, so it has to be typed in each place.)
+#
+# NOTE: Home Assistant removes these comments when you save.
+# =============================================================================
+alias: NHL Goal Trigger
+description: Start the goal celebration when your team's score goes up
 triggers:
-  - entity_id: sensor.lightning  # CHANGE THIS to your team's ESPN sensor
+  - entity_id: sensor.lightning  # CHANGE: your Team Tracker sensor
     attribute: team_score
     trigger: state
-    enabled: true
 conditions:
+  # Only when the score went up (not a score correction going down).
   - condition: template
     value_template: |-
-      {{ trigger.to_state.attributes.team_score | int > 
-         trigger.from_state.attributes.team_score | int }}
+      {{ trigger.to_state.attributes.team_score | int(0) >
+         trigger.from_state.attributes.team_score | int(0) }}
+  # Only during the game (IN) or right after it ends (POST), so an overtime
+  # winner that ESPN posts after the final horn still counts.
   - condition: or
     conditions:
       - condition: state
-        entity_id: sensor.lightning  # CHANGE THIS to your team's ESPN sensor
+        entity_id: sensor.lightning  # CHANGE: your Team Tracker sensor
         state: IN
       - condition: state
-        entity_id: sensor.lightning  # CHANGE THIS to your team's ESPN sensor
+        entity_id: sensor.lightning  # CHANGE: your Team Tracker sensor
         state: POST
 actions:
-  - action: script.nhlgoalscorev34
+  # Must match the goal script's entity ID.
+  - action: script.nhl_goal_celebration
     data: {}
+# "single": while a celebration is running (about 2 minutes), another score
+# change is ignored. This also stops a score that flickers (2 -> 1 -> 2) from
+# celebrating twice.
 mode: single

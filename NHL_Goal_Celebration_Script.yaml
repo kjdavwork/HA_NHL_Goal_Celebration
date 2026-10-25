@@ -1,0 +1,564 @@
+# =============================================================================
+# NHL Goal Celebration - main script (V36)
+# =============================================================================
+# Install: Settings -> Automations & Scenes -> Scripts -> + Add Script ->
+#          (three-dot menu) Edit in YAML -> paste this whole file -> Save.
+#
+# The script must end up with the entity ID script.nhl_goal_celebration,
+# because NHL_Goal_Automation.yaml and NHL_Win_Celebration.yaml call it by
+# that name. Check under the script's Settings after saving.
+#
+# Customize: everything you normally need to change is in the SETTINGS block
+# below (marked "CHANGE"), plus the YouTube video ID and the TTS action, which
+# are marked "CHANGE" further down.
+#
+# NOTE: Home Assistant removes these comments when you save the script in its
+# editor. Keep this file if you want the notes for later.
+# =============================================================================
+alias: NHL Goal Celebration
+description: >
+  ESPN loop + NHL API fallback. Silent by default; turn on
+  input_boolean.nhl_goal_debug_mode for a debug notification after each goal.
+  V36 - see CHANGELOG.md.
+mode: queued
+max: 5
+sequence:
+  # ---------------------------------------------------------------------------
+  # SETTINGS - CHANGE these for your team and devices
+  # ---------------------------------------------------------------------------
+  - variables:
+      # CHANGE: your team's Team Tracker (ESPN) sensor.
+      # Find it in Developer Tools -> States; it has team_score and last_play.
+      espn_sensor: sensor.lightning
+      # CHANGE: your team's NHL API (hass-nhlapi) sensor.
+      # It has attributes like scoring_player_name and goal_tracked_team.
+      nhl_sensor: sensor.lightning_nhl
+      # CHANGE: the speaker/display that plays the video and the announcements
+      # (Google Home, Nest, Chromecast...). Developer Tools -> States -> media_player.
+      speaker: media_player.google_home_display
+      # CHANGE: the light that flashes. Needs color support for team colors.
+      light: light.lr_lifx_1
+      # CHANGE: team name used in the announcement ("<team_name> goal!").
+      team_name: Tampa Bay Lightning
+      # CHANGE: team color as [red, green, blue], each 0-255.
+      # See the color table in NHL_Goal_Celebration_Setup_Guide.md.
+      team_color: [17, 0, 255]
+      # Color the light returns to after the celebration if it was on before.
+      restore_color: [255, 255, 255]
+      # Seconds to wait before the celebration starts, to match your TV or
+      # streaming delay. The ESPN check (below) always runs for 45 s, so going
+      # under 45 here does not make the announcement come any sooner.
+      stream_delay_seconds: 45
+      # How many seconds of the goal video to play (lights flash this long).
+      goal_video_seconds: 30
+      # CHANGE if you don't use Amazon Polly: these are Polly options.
+      tts_voice: Matthew
+      tts_engine: neural
+      # The toggle helper that turns on debug notifications (see setup guide).
+      debug_toggle: input_boolean.nhl_goal_debug_mode
+  - variables:
+      initial_light_state: "{{ states(light) }}"
+      goal_data_captured: false
+      goal_play_text: ""
+      captured_clock: ""
+      captured_period: ""
+      data_source: none
+  # ---------------------------------------------------------------------------
+  # Two things run side by side:
+  #   1. wait for the stream delay, then the goal video + flashing lights
+  #   2. check ESPN's last_play every 5 s (9 times = 45 s) for the goal text
+  # The ESPN check is tuned to the 45 s wait; leave it alone unless you know why.
+  # ---------------------------------------------------------------------------
+  - parallel:
+      - sequence:
+          - delay:
+              seconds: "{{ stream_delay_seconds }}"
+          - target:
+              entity_id: "{{ speaker }}"
+            data:
+              media:
+                # CHANGE: your goal horn / goal song YouTube video ID.
+                # It's the part after "v=" in the YouTube URL
+                # (youtube.com/watch?v=3SeeHZQVgNQ -> 3SeeHZQVgNQ).
+                media_content_id: "{\"app_name\": \"youtube\", \"media_id\": \"3SeeHZQVgNQ\"}"
+                media_content_type: cast
+            action: media_player.play_media
+          - target:
+              entity_id: "{{ light }}"
+            data:
+              brightness_pct: 100
+              rgb_color: "{{ team_color }}"
+            action: light.turn_on
+          - variables:
+              video_start: "{{ now().timestamp() }}"
+          # Flash until goal_video_seconds have passed since the video started
+          # (a fixed count ran long or short depending on how fast the light
+          # responded).
+          - repeat:
+              while:
+                - condition: template
+                  value_template: >-
+                    {{ now().timestamp() - video_start | float(0) <
+                    goal_video_seconds | float(30) }}
+              sequence:
+                - target:
+                    entity_id: "{{ light }}"
+                  action: light.turn_off
+                - delay:
+                    milliseconds: 1500
+                - target:
+                    entity_id: "{{ light }}"
+                  data:
+                    brightness: 255
+                    rgb_color: "{{ team_color }}"
+                  action: light.turn_on
+                - delay:
+                    milliseconds: 1500
+          # Put the light back the way it was (on = restore_color, off = off).
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ initial_light_state == 'on' }}"
+                sequence:
+                  - target:
+                      entity_id: "{{ light }}"
+                    data:
+                      brightness_pct: 100
+                      rgb_color: "{{ restore_color }}"
+                      transition: 2
+                    action: light.turn_on
+              - conditions:
+                  - condition: template
+                    value_template: "{{ initial_light_state == 'off' }}"
+                sequence:
+                  - target:
+                      entity_id: "{{ light }}"
+                    data:
+                      brightness_pct: 100
+                      rgb_color: "{{ restore_color }}"
+                    action: light.turn_on
+                  - delay:
+                      milliseconds: 500
+                  - target:
+                      entity_id: "{{ light }}"
+                    action: light.turn_off
+      # ESPN check: look for "goal" in last_play. Every match updates the text
+      # (so the newest wording wins), but the clock and period are kept from
+      # the first match so the announced time is the time of the goal.
+      - sequence:
+          - repeat:
+              while:
+                - condition: template
+                  value_template: "{{ repeat.index <= 9 }}"
+              sequence:
+                - variables:
+                    current_play: >-
+                      {{ state_attr(espn_sensor, 'last_play') |
+                      default('', true) }}
+                    current_play_lower: "{{ current_play | lower }}"
+                    is_goal: >-
+                      {{ 'goal' in current_play_lower and 'goalie' not in
+                      current_play_lower }}
+                - if:
+                    - condition: template
+                      value_template: "{{ is_goal }}"
+                  then:
+                    - variables:
+                        captured_clock: >-
+                          {{ captured_clock if goal_data_captured else
+                          state_attr(espn_sensor, 'clock') |
+                          default('') | string }}
+                        captured_period: >-
+                          {{ captured_period if goal_data_captured else
+                          state_attr(espn_sensor, 'quarter') |
+                          default('') | string | trim }}
+                        goal_data_captured: true
+                        goal_play_text: "{{ current_play }}"
+                        captured_iteration: "{{ repeat.index }}"
+                        data_source: ESPN
+                - delay:
+                    seconds: 5
+  # ---------------------------------------------------------------------------
+  # NHL API fallback: used only if ESPN never showed the goal. It is trusted
+  # only when it says the goal was your team's and its score matches ESPN's.
+  # ---------------------------------------------------------------------------
+  - variables:
+      nhl_scorer: >-
+        {{ state_attr(nhl_sensor, 'scoring_player_name') |
+        default('', true) }}
+      nhl_scorer_number: >-
+        {{ state_attr(nhl_sensor, 'scoring_player_number') |
+        default('', true) }}
+      nhl_assist1: >-
+        {{ state_attr(nhl_sensor, 'assist1_player_name') |
+        default('', true) }}
+      nhl_assist1_number: >-
+        {{ state_attr(nhl_sensor, 'assist1_player_number') |
+        default('', true) }}
+      nhl_assist2: >-
+        {{ state_attr(nhl_sensor, 'assist2_player_name') |
+        default('', true) }}
+      nhl_assist2_number: >-
+        {{ state_attr(nhl_sensor, 'assist2_player_number') |
+        default('', true) }}
+      nhl_goal_type: >-
+        {{ state_attr(nhl_sensor, 'goal_type') | default('', true)
+        }}
+      nhl_goal_tracked_team: >-
+        {{ state_attr(nhl_sensor, 'goal_tracked_team') |
+        default(false, true) }}
+      nhl_away_score: >-
+        {{ state_attr(nhl_sensor, 'away_score') | default(0, true) |
+        int }}
+      nhl_home_score: >-
+        {{ state_attr(nhl_sensor, 'home_score') | default(0, true) |
+        int }}
+      espn_team_score: >-
+        {{ state_attr(espn_sensor, 'team_score') | default(0, true) | int
+        }}
+      espn_team_homeaway: >-
+        {{ state_attr(espn_sensor, 'team_homeaway') | default('', true)
+        }}
+      nhl_current_period: >-
+        {{ state_attr(nhl_sensor, 'current_period') | default(0,
+        true) | int }}
+      nhl_team_score: |-
+        {% if espn_team_homeaway == 'home' %}
+          {{ nhl_home_score }}
+        {% else %}
+          {{ nhl_away_score }}
+        {% endif %}
+      nhl_has_scorer: "{{ nhl_scorer not in ['', 'None', none] }}"
+      nhl_is_team_goal: "{{ nhl_goal_tracked_team == true }}"
+      nhl_score_matches: "{{ nhl_team_score | int == espn_team_score }}"
+      nhl_fallback_valid: "{{ nhl_has_scorer and nhl_is_team_goal and nhl_score_matches }}"
+      use_nhl_fallback: "{{ not goal_data_captured and nhl_fallback_valid }}"
+  - if:
+      - condition: template
+        value_template: "{{ use_nhl_fallback }}"
+    then:
+      - variables:
+          goal_data_captured: true
+          data_source: NHL_API
+          captured_period: "{{ nhl_current_period | string | trim }}"
+          captured_clock: ""
+  # ---------------------------------------------------------------------------
+  # Turn the captured data into announcement pieces (scorer, assists, period
+  # name, clock). No settings in here.
+  # ---------------------------------------------------------------------------
+  - variables:
+      clock_clean: |-
+        {% if captured_clock and ' - ' in captured_clock %}
+          {{ captured_clock.split(' - ')[0].strip() }}
+        {% else %}
+          {{ captured_clock }}
+        {% endif %}
+      period_name: |-
+        {% set p = captured_period | string | trim %}
+        {% if p == '1' %}
+          first period
+        {% elif p == '2' %}
+          second period
+        {% elif p == '3' %}
+          third period
+        {% elif p == '4' %}
+          overtime
+        {% elif p == '5' %}
+          second overtime
+        {% elif p == '6' %}
+          third overtime
+        {% else %}
+          period {{ p }}
+        {% endif %}
+      goal_scorer: |-
+        {% if data_source == 'ESPN' %}
+          {% set play = goal_play_text %}
+          {% set play_lower = play | lower %}
+          {% if 'goal' in play_lower and 'goalie' not in play_lower %}
+            {% if 'Goal' in play %}
+              {{ play.split('Goal')[0].strip() }}
+            {% elif 'goal' in play %}
+              {{ play.split('goal')[0].strip() }}
+            {% else %}
+              Unknown
+            {% endif %}
+          {% else %}
+            Unknown
+          {% endif %}
+        {% elif data_source == 'NHL_API' %}
+          {{ nhl_scorer }}
+        {% else %}
+          Unknown
+        {% endif %}
+      goal_scorer_number: |-
+        {% if data_source == 'NHL_API' %}
+          {{ nhl_scorer_number }}
+        {% else %}
+
+        {% endif %}
+      assist_raw: |-
+        {% if data_source == 'ESPN' %}
+          {% set play = goal_play_text %}
+          {% if 'assists:' in play %}
+            {% set assist_part = play.split('assists:')[1].strip() %}
+            {{ assist_part }}
+          {% else %}
+            none
+          {% endif %}
+        {% else %}
+
+        {% endif %}
+      has_assists: |-
+        {% if data_source == 'ESPN' %}
+          {% set raw = assist_raw | lower %}
+          {{ raw not in ['none', '', 'null'] and 'none' not in raw }}
+        {% elif data_source == 'NHL_API' %}
+          {{ nhl_assist1 not in ['', 'None', none] }}
+        {% else %}
+          false
+        {% endif %}
+      assist1_name: |-
+        {% if data_source == 'ESPN' %}
+          {% if has_assists %}
+            {% set parts = assist_raw.split(',') %}
+            {% if parts | length > 0 %}
+              {% set first = parts[0].strip() %}
+              {% if '(' in first %}
+                {{ first.split('(')[0].strip() }}
+              {% else %}
+                {{ first }}
+              {% endif %}
+            {% else %}
+
+            {% endif %}
+          {% else %}
+
+          {% endif %}
+        {% elif data_source == 'NHL_API' %}
+          {{ nhl_assist1 }}
+        {% else %}
+
+        {% endif %}
+      assist1_number: |-
+        {% if data_source == 'NHL_API' %}
+          {{ nhl_assist1_number }}
+        {% else %}
+
+        {% endif %}
+      assist2_name: |-
+        {% if data_source == 'ESPN' %}
+          {% if has_assists %}
+            {% set parts = assist_raw.split(',') %}
+            {% if parts | length > 1 %}
+              {% set second = parts[1].strip() %}
+              {% if '(' in second %}
+                {{ second.split('(')[0].strip() }}
+              {% else %}
+                {{ second }}
+              {% endif %}
+            {% else %}
+
+            {% endif %}
+          {% else %}
+
+          {% endif %}
+        {% elif data_source == 'NHL_API' %}
+          {{ nhl_assist2 }}
+        {% else %}
+
+        {% endif %}
+      assist2_number: |-
+        {% if data_source == 'NHL_API' %}
+          {{ nhl_assist2_number }}
+        {% else %}
+
+        {% endif %}
+  # ---------------------------------------------------------------------------
+  # Stop the video and announce the scorer.
+  # ---------------------------------------------------------------------------
+  - target:
+      entity_id: "{{ speaker }}"
+    action: media_player.media_stop
+  - delay:
+      seconds: 2
+  - if:
+      - condition: template
+        value_template: "{{ goal_data_captured and goal_scorer != 'Unknown' }}"
+    then:
+      - target:
+          entity_id: "{{ speaker }}"
+        data:
+          message: |-
+            {% if clock_clean %}
+              {{ team_name }} goal! At {{ clock_clean }} of the {{ period_name }}. Scored by {{ 'number ' + goal_scorer_number|string + ', ' if goal_scorer_number else '' }}{{ goal_scorer }}!
+            {% else %}
+              {{ team_name }} goal in the {{ period_name }}! Scored by {{ 'number ' + goal_scorer_number|string + ', ' if goal_scorer_number else '' }}{{ goal_scorer }}!
+            {% endif %}
+          options:
+            voice: "{{ tts_voice }}"
+            engine: "{{ tts_engine }}"
+        # CHANGE if you don't use Amazon Polly (e.g. tts.google_translate_say,
+        # and remove the Polly "options" above). Same for the assist
+        # announcement further down.
+        action: tts.amazon_polly_say
+  # Wait for the speech to start, then to finish, before turning the speaker
+  # off. A fixed delay cut long names off.
+  - wait_template: "{{ is_state(speaker, 'playing') }}"
+    timeout: "00:00:15"
+    continue_on_timeout: true
+  - wait_template: >-
+      {{ states(speaker) in ['idle', 'off', 'paused', 'standby'] }}
+    timeout: "00:00:30"
+    continue_on_timeout: true
+  - target:
+      entity_id: "{{ speaker }}"
+    action: media_player.turn_off
+  - delay:
+      seconds: 5
+  # ---------------------------------------------------------------------------
+  # Assists. ESPN rarely has them in time, and the NHL API often adds them
+  # 60-110 s after the goal. If none are known yet, wait up to 20 s for them,
+  # then read the NHL API again.
+  # ---------------------------------------------------------------------------
+  - variables:
+      assist_wait_start: "{{ now().timestamp() }}"
+  - if:
+      - condition: template
+        value_template: "{{ goal_data_captured and not has_assists }}"
+    then:
+      - wait_template: >-
+          {{ state_attr(nhl_sensor, 'goal_tracked_team') == true
+             and state_attr(nhl_sensor, 'assist1_player_name') not in
+             ['', 'None', none] }}
+        timeout: "00:00:20"
+        continue_on_timeout: true
+  - variables:
+      assist_wait_seconds: >-
+        {{ (now().timestamp() - assist_wait_start | float(0)) | round(0) | int
+        }}
+      fresh_assist1: >-
+        {{ state_attr(nhl_sensor, 'assist1_player_name') |
+        default('', true) }}
+      fresh_assist2: >-
+        {{ state_attr(nhl_sensor, 'assist2_player_name') |
+        default('', true) }}
+      fresh_assist1_number: >-
+        {{ state_attr(nhl_sensor, 'assist1_player_number') |
+        default('', true) }}
+      fresh_assist2_number: >-
+        {{ state_attr(nhl_sensor, 'assist2_player_number') |
+        default('', true) }}
+      fresh_nhl_score: >-
+        {{ state_attr(nhl_sensor, 'home_score' if espn_team_homeaway
+        == 'home' else 'away_score') | int(0) }}
+  - if:
+      - condition: template
+        value_template: >-
+          {{ goal_data_captured
+             and state_attr(nhl_sensor, 'goal_tracked_team') == true
+             and fresh_nhl_score | int == espn_team_score | int
+             and fresh_assist1 not in ['', 'None'] }}
+    then:
+      - variables:
+          has_assists: true
+          assist1_name: "{{ fresh_assist1 }}"
+          assist1_number: "{{ fresh_assist1_number }}"
+          assist2_name: "{{ fresh_assist2 }}"
+          assist2_number: "{{ fresh_assist2_number }}"
+  - if:
+      - condition: template
+        value_template: "{{ goal_data_captured and has_assists and assist1_name != '' }}"
+    then:
+      - target:
+          entity_id: "{{ speaker }}"
+        data:
+          message: |-
+            {% if assist2_name != '' %}
+              Assisted by {{ 'number ' + assist1_number|string + ', ' if assist1_number else '' }}{{ assist1_name }}, and {{ 'number ' + assist2_number|string + ', ' if assist2_number else '' }}{{ assist2_name }}!
+            {% else %}
+              Assisted by {{ 'number ' + assist1_number|string + ', ' if assist1_number else '' }}{{ assist1_name }}!
+            {% endif %}
+          options:
+            voice: "{{ tts_voice }}"
+            engine: "{{ tts_engine }}"
+        # CHANGE if you don't use Amazon Polly (see the scorer announcement).
+        action: tts.amazon_polly_say
+      - wait_template: "{{ is_state(speaker, 'playing') }}"
+        timeout: "00:00:15"
+        continue_on_timeout: true
+      - wait_template: >-
+          {{ states(speaker) in ['idle', 'off', 'paused', 'standby'] }}
+        timeout: "00:00:30"
+        continue_on_timeout: true
+      - target:
+          entity_id: "{{ speaker }}"
+        action: media_player.turn_off
+  # ---------------------------------------------------------------------------
+  # Debug notification (only when the debug toggle is on).
+  # ---------------------------------------------------------------------------
+  - if:
+      - condition: template
+        value_template: "{{ is_state(debug_toggle, 'on') }}"
+    then:
+      - data:
+          title: Goal Debug - V36
+          message: >
+            === DATA SOURCE: {{ data_source }} ===
+
+
+            ESPN Loop Results:
+
+            - Data captured: {{ 'ESPN' if data_source == 'ESPN' else 'False' }}
+
+            - Iteration: {{ captured_iteration if data_source == 'ESPN' else
+            'N/A' }}
+
+            - Raw last_play: {{ goal_play_text if goal_play_text else '(empty)'
+            }}
+
+
+            NHL API Fallback Check:
+
+            - Has scorer: {{ nhl_has_scorer }}
+
+            - Is our team's goal: {{ nhl_is_team_goal }}
+
+            - Team home/away: {{ espn_team_homeaway }}
+
+            - Score matches: {{ nhl_score_matches }} (NHL team: {{
+            nhl_team_score }}, ESPN: {{ espn_team_score }})
+
+            - NHL away: {{ nhl_away_score }}, NHL home: {{ nhl_home_score }}
+
+            - Fallback valid: {{ nhl_fallback_valid }}
+
+            - Fallback used: {{ use_nhl_fallback }}
+
+
+            Final Goal Data:
+
+            - Scorer: {{ goal_scorer }}{{ ' (#' + goal_scorer_number|string +
+            ')' if goal_scorer_number else '' }}
+
+            - Period: {{ captured_period }} ({{ period_name }})
+
+            - Clock: {{ clock_clean if clock_clean else 'N/A' }}
+
+            - Goal Type: {{ nhl_goal_type if data_source == 'NHL_API' else 'N/A'
+            }}
+
+
+            Assists:
+
+            - Has assists: {{ has_assists }}
+
+            - Assist 1: {{ assist1_name }}{{ ' (#' + assist1_number|string + ')'
+            if assist1_number else '' }}
+
+            - Assist 2: {{ assist2_name }}{{ ' (#' + assist2_number|string + ')'
+            if assist2_number else '' }}
+
+            - NHL re-read: {{ fresh_assist1 if fresh_assist1 else 'none' }}, {{
+            fresh_assist2 if fresh_assist2 else 'none' }} (NHL score {{
+            fresh_nhl_score }}, waited {{ assist_wait_seconds }} s)
+        action: persistent_notification.create

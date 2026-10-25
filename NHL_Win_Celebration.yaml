@@ -1,0 +1,163 @@
+# =============================================================================
+# NHL Win Celebration (V1.6 - BETA)
+# =============================================================================
+# When the game ends with your team ahead: plays a win video on the speaker
+# with flashing lights, then announces the final score.
+#
+# BETA: V1.6 hasn't run in a real game yet. Earlier versions did, and the
+# pieces it shares with the goal script (video, light flashing, waiting for
+# the speech to finish) are tested.
+#
+# Install: Settings -> Automations & Scenes -> + Create Automation ->
+#          Create new automation -> (three-dot menu) Edit in YAML -> paste -> Save.
+#
+# CHANGE: sensor.lightning in the trigger (it can't use a variable), the
+# settings in the "variables" block, and the YouTube video ID further down.
+#
+# NOTE: Home Assistant removes these comments when you save.
+# =============================================================================
+alias: NHL Win Celebration
+description: >-
+  Win video, flashing lights and a final-score announcement when your team
+  wins. Waits for the goal celebration to finish first (late or overtime
+  winners). V1.6 - see CHANGELOG.md.
+triggers:
+  # The game going from in progress (IN) to final (POST). This catches
+  # regulation, overtime and shootout wins alike.
+  - trigger: state
+    entity_id: sensor.lightning  # CHANGE: your Team Tracker sensor
+    from: IN
+    to: POST
+# ---------------------------------------------------------------------------
+# SETTINGS - CHANGE these for your team and devices (same values as the
+# goal script)
+# ---------------------------------------------------------------------------
+variables:
+  # CHANGE: your team's Team Tracker (ESPN) sensor (same as in the trigger).
+  espn_sensor: sensor.lightning
+  # CHANGE: the speaker/display for the video and announcement.
+  speaker: media_player.google_home_display
+  # CHANGE: the light that flashes.
+  light: light.lr_lifx_1
+  # CHANGE: team name for the announcement ("<team_name> win!").
+  team_name: Tampa Bay Lightning
+  # CHANGE: team color as [red, green, blue], each 0-255.
+  team_color: [17, 0, 255]
+  # Color the light returns to after the celebration if it was on before.
+  restore_color: [255, 255, 255]
+  # How many seconds of the win video to play (lights flash this long).
+  win_video_seconds: 45
+  # CHANGE if you don't use Amazon Polly: these are Polly options.
+  tts_voice: Matthew
+  tts_engine: neural
+  # The goal script; the win celebration waits for it to finish.
+  goal_script: script.nhl_goal_celebration
+conditions:
+  # Only if your team won.
+  - condition: template
+    value_template: >-
+      {{ state_attr(espn_sensor, 'team_score') | int(0) >
+         state_attr(espn_sensor, 'opponent_score') | int(0) }}
+actions:
+  # If a late or overtime goal is still being celebrated, wait (up to 3 min)
+  # so the two don't talk over each other.
+  - wait_template: "{{ is_state(goal_script, 'off') }}"
+    timeout: "00:03:00"
+    continue_on_timeout: true
+  - variables:
+      initial_light_state: "{{ states(light) }}"
+  - target:
+      entity_id: "{{ speaker }}"
+    data:
+      media:
+        # CHANGE: your win video's YouTube ID (the part after "v=" in the URL).
+        media_content_id: "{\"app_name\": \"youtube\", \"media_id\": \"CLoov5iBXB4\"}"
+        media_content_type: cast
+    action: media_player.play_media
+  - variables:
+      video_start: "{{ now().timestamp() }}"
+  - target:
+      entity_id: "{{ light }}"
+    data:
+      brightness_pct: 100
+      rgb_color: "{{ team_color }}"
+    action: light.turn_on
+  # Lights flash until win_video_seconds have passed since the video started.
+  - repeat:
+      while:
+        - condition: template
+          value_template: >-
+            {{ now().timestamp() - video_start | float(0) <
+            win_video_seconds | float(45) }}
+      sequence:
+        - target:
+            entity_id: "{{ light }}"
+          action: light.turn_off
+        - delay:
+            milliseconds: 1500
+        - target:
+            entity_id: "{{ light }}"
+          data:
+            brightness: 255
+            rgb_color: "{{ team_color }}"
+          action: light.turn_on
+        - delay:
+            milliseconds: 1500
+  - target:
+      entity_id: "{{ speaker }}"
+    action: media_player.media_stop
+  - delay:
+      seconds: 2
+  - data:
+      message: >
+        {{ team_name }} win! Final score {{ state_attr(espn_sensor,
+        'team_score') }} to {{ state_attr(espn_sensor, 'opponent_score')
+        }}. That is the game!
+      options:
+        voice: "{{ tts_voice }}"
+        engine: "{{ tts_engine }}"
+    target:
+      entity_id: "{{ speaker }}"
+    # CHANGE if you don't use Amazon Polly (e.g. tts.google_translate_say,
+    # and remove the Polly "options" above).
+    action: tts.amazon_polly_say
+  # Wait for the speech to start, then to finish, before turning the speaker off.
+  - wait_template: "{{ is_state(speaker, 'playing') }}"
+    timeout: "00:00:15"
+    continue_on_timeout: true
+  - wait_template: >-
+      {{ states(speaker) in ['idle', 'off', 'paused', 'standby'] }}
+    timeout: "00:00:30"
+    continue_on_timeout: true
+  - target:
+      entity_id: "{{ speaker }}"
+    action: media_player.turn_off
+  # Put the light back the way it was (on = restore_color, off = off).
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ initial_light_state == 'on' }}"
+        sequence:
+          - target:
+              entity_id: "{{ light }}"
+            data:
+              brightness_pct: 100
+              rgb_color: "{{ restore_color }}"
+              transition: 2
+            action: light.turn_on
+      - conditions:
+          - condition: template
+            value_template: "{{ initial_light_state == 'off' }}"
+        sequence:
+          - target:
+              entity_id: "{{ light }}"
+            data:
+              rgb_color: "{{ restore_color }}"
+              brightness_pct: 100
+            action: light.turn_on
+          - delay:
+              milliseconds: 500
+          - target:
+              entity_id: "{{ light }}"
+            action: light.turn_off
+mode: single
