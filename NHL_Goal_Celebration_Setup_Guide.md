@@ -1,555 +1,340 @@
 # NHL Goal Celebration - User Setup Guide
 
-Transform your home into a stadium! Get instant goal horn, lights, and announcements when your favorite NHL team scores.
+Transform your home into a stadium! Get a goal video, flashing lights, and announcements when your favorite NHL team scores, timed to match your TV stream.
 
-**Success Rate:** 97.6% goal detection reliability  
-**Tested Over:** 10+ games, 40+ goals  
-**Status:** Production-ready (V34)
+**Version:** goal script V36, win celebration V1.6 (beta). See [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
 ## 🎯 What This Does
 
 When your NHL team scores a goal:
-1. **🔊 Goal Horn** - YouTube audio plays (45-second delay for streaming)
-2. **💡 Light Show** - Team color lights flash 5 times
-3. **📢 TTS Announcement** - "Tampa Bay Lightning goal! At 14:32 of the second period. Scored by number 86, Nikita Kucherov! Assisted by number 77, Victor Hedman and number 88, Andrei Vasilevskiy!"
-4. **🎊 Win Celebration** - Special blue light show after wins
+1. **🔊 Goal video** - a YouTube goal horn/song plays on your speaker for 30 seconds, starting about 45 seconds after the goal (to line up with your stream)
+2. **💡 Light show** - your light flashes in team colors while the video plays
+3. **📢 Announcement** - "Tampa Bay Lightning goal! At 14:32 of the second period. Scored by Nikita Kucherov!" followed by "Assisted by Brandon Hagel, and Victor Hedman!"
+4. **🎊 Win celebration (optional, beta)** - a win video, light show and the final score after a win
 
 **Features:**
-- ✅ Natural period names ("first period" not "period 1")
-- ✅ Dual-source reliability (ESPN + NHL API fallback)
-- ✅ Smart light restoration (returns to previous state)
-- ✅ Optional debug mode (for monitoring)
+- ✅ Natural period names ("first period" not "period 1", "overtime")
+- ✅ Two data sources (ESPN first, NHL API as the fallback)
+- ✅ Assists re-checked from the NHL API, since they often show up late
+- ✅ Light goes back on or off the way it was
+- ✅ Optional debug notifications
 - ✅ Works for home and away games
-- ✅ Handles assisted and unassisted goals
 
 ---
 
 ## 📋 Prerequisites
 
-### Required Home Assistant Components:
+You need **Home Assistant 2024.10 or newer**.
 
-#### 1. **ESPN Sensor Integration**
-You need the ESPN sensor tracking your NHL team's games.
+### 1. Team Tracker (ESPN data)
 
-**Installation:**
-- HACS → Integrations → Search "ESPN" → Install
-- Configuration → Integrations → Add Integration → ESPN
-- Select "NHL" and your team (e.g., "Tampa Bay Lightning")
+Gives the score, game state and the latest play.
 
-**Entity Created:** `sensor.lightning` (or your team name)
+**Install:**
+- HACS → search **Team Tracker** → Download → restart Home Assistant
+- Settings → Devices & Services → Add Integration → **Team Tracker**
+- League: **NHL**, Team ID: your team's abbreviation (for example `TB`)
 
-**Verify It Works:**
-- Developer Tools → States
-- Find `sensor.lightning`
-- Check attributes include: `team_score`, `last_play`, `quarter`, `clock`
+Project page: https://github.com/vasqued2/ha-teamtracker
 
----
+**Check it:** Developer Tools → States → find your sensor (this guide uses `sensor.lightning`). It should have attributes `team_score`, `opponent_score`, `last_play`, `quarter`, `clock` and `team_homeaway`. Its state is `PRE`, `IN` or `POST` on game days.
 
-#### 2. **NHL API Sensor Integration** (Fallback)
-Provides backup data if ESPN is slow/incorrect.
+### 2. hass-nhlapi (NHL API data, the fallback)
 
-**Installation:**
-- HACS → Integrations → Search "NHL API" → Install
-- Configuration → Integrations → Add Integration → NHL API
-- Select your team
+Gives the scorer, assists and jersey numbers when ESPN is slow.
 
-**Entity Created:** `sensor.lightning_nhl` (or your team name + _nhl)
+**Install:**
+- HACS → search **NHL API** (hass-nhlapi) → Download → restart Home Assistant. If it isn't listed, add `https://github.com/JayBlackedOut/hass-nhlapi` as a custom repository (HACS → ⋮ → Custom repositories, type Integration). To get a pre-release like v1.2.1b, pick it under **Redownload → Version**.
+- Settings → Devices & Services → Add Integration → **NHL API** → choose your team
 
-**Verify It Works:**
-- Developer Tools → States
-- Find `sensor.lightning_nhl`
-- Check attributes include: `scoring_player_name`, `assist1_player_name`, etc.
+Project page: https://github.com/JayBlackedOut/hass-nhlapi. Tested with v1.2.1b (a pre-release) with a 5-second update interval.
 
----
+**Check it:** Developer Tools → States → find your sensor (this guide uses `sensor.lightning_nhl`). During a game it should have `scoring_player_name`, `assist1_player_name`, `goal_tracked_team`, `home_score` and `away_score`.
 
-#### 3. **Smart Light** (LIFX, Hue, etc.)
-At least one smart light for the celebration light show.
+### 3. A smart light
 
-**This guide uses LIFX:** `light.lr_lifx_1`
+Any light with color support (LIFX, Hue, etc.). This guide uses `light.lr_lifx_1`. A white-only bulb will still flash, but without team colors.
 
-**If using different lights:**
-- You'll need to update the entity_id in the script
-- RGB color support recommended (for team colors)
+### 4. A speaker or display
 
----
+A Google Home / Nest speaker or display, or a Chromecast. The goal video is played as YouTube over cast, so it needs a device that can cast YouTube. This guide uses `media_player.google_home_display`.
 
-#### 4. **Media Player** (Google Home, Chromecast, Echo)
-For playing goal horn and TTS announcements.
+**Check it:** play something to it from Home Assistant first, and make sure it responds.
 
-**This guide uses Google Home:** `media_player.google_home_display`
+### 5. A TTS (text-to-speech) service
 
-**Supported:**
-- Google Home / Nest speakers
-- Chromecast devices
-- Echo devices (with workarounds)
-
-**Verify It Works:**
-- Try playing something manually to the device
-- Make sure it's on your network and responsive
-
----
-
-#### 5. **TTS Service** (Text-to-Speech)
-For announcing goal details.
-
-**This guide uses Amazon Polly:**
-- Configuration → Integrations → Add Integration → Amazon Polly
-- Requires AWS account (free tier available)
-- Voice used: "Matthew" (Neural engine)
-
-**Alternatives:**
-- Google TTS (free, built-in)
-- Microsoft TTS
-- Any TTS service HA supports
+This guide uses **Amazon Polly** (voice "Matthew", neural engine), which needs an AWS account. Google Translate TTS (free, built in) and others work too; see [Using a different TTS service](#change-the-tts-service).
 
 ---
 
 ## 🛠️ Installation Steps
 
+> **About comments:** the YAML files have comments (lines starting with `#`) that explain every setting. **Home Assistant deletes these comments when you save** in its editor. Keep the downloaded files if you want the notes later.
+
 ### Step 1: Create the Debug Toggle Helper
 
-This allows you to turn debug notifications on/off without editing code.
+This turns debug notifications on and off without editing anything.
 
-**Instructions:**
 1. Go to **Settings → Devices & Services → Helpers**
-2. Click **"+ CREATE HELPER"**
-3. Select **"Toggle"**
-4. Configure:
-   - **Name:** `NHL Goal Debug Mode`
-   - **Icon:** `mdi:hockey-puck` (optional)
-   - **Entity ID:** `input_boolean.nhl_goal_debug_mode`
-5. Click **"CREATE"**
+2. Click **+ Create Helper** → **Toggle**
+3. Name: `NHL Goal Debug Mode` (icon `mdi:hockey-puck` is optional)
+4. Click **Create**, and check the entity ID is `input_boolean.nhl_goal_debug_mode`
 
-**Usage:**
-- **OFF** (default) = Silent operation, no debug notifications
-- **ON** = Shows detailed debug info for each goal
+- **Off** = silent operation
+- **On** = a notification after each goal showing what data was found and used
 
 ---
 
-### Step 2: Find Your Team's Goal Horn Video
+### Step 2: Find Your Team's Goal Video
 
-Before creating the script, find your team's goal horn on YouTube.
+1. Search YouTube for your team's goal horn or goal song (for example "tampa bay lightning goal horn"). Clean audio without commentary works best.
+2. Copy the **video ID**:
+   - Browser: `https://www.youtube.com/watch?v=3SeeHZQVgNQ` → the ID is everything after `v=` → `3SeeHZQVgNQ`
+   - Phone (Share link): `https://youtu.be/3SeeHZQVgNQ` → the ID is everything after `youtu.be/`
+3. Do the same for a win video if you'll use the win celebration.
 
-**Instructions:**
-
-1. **Search YouTube** for your team's goal horn:
-   - Example searches: 
-     - "tampa bay lightning goal horn"
-     - "toronto maple leafs goal horn 2025"
-     - "boston bruins goal horn official"
-   - Look for clean audio versions (not gameplay clips with commentary)
-   - Official team channels or high-quality fan uploads work best
-
-2. **Find the Video ID:**
-   
-   **Desktop/Browser Method:**
-   - Open the video on YouTube
-   - Look at the URL in your browser's address bar
-   - Example: `https://www.youtube.com/watch?v=MBxxCDtBXlY`
-   - The Video ID is everything after `v=` → **MBxxCDtBXlY**
-   
-   **Mobile App Method:**
-   - Open the video in YouTube app
-   - Tap "Share"
-   - The share URL will look like: `https://youtu.be/MBxxCDtBXlY`
-   - The Video ID is everything after `youtu.be/` → **MBxxCDtBXlY**
-
-3. **Copy the Video ID** - you'll need it in Step 3 (line 20 of the script)
-
-**Example Video IDs by Team:**
-- Tampa Bay Lightning: `MBxxCDtBXlY`
-- (Search for your team and extract the ID using the method above)
-
-**Tips for Finding Good Goal Horn Videos:**
-- Search for "official" or "HD" versions
-- Look for videos that are 10-30 seconds long (just the horn)
-- Avoid highlight reels or gameplay videos
-- Test the video before using - make sure it sounds right!
+The script plays the first 30 seconds of the video (you can change that), so any length works.
 
 ---
 
 ### Step 3: Create the Goal Celebration Script
 
-**Instructions:**
-1. Go to **Settings → Automations & Scenes → Scripts tab**
-2. Click **"+ ADD SCRIPT"**
-3. Click the **⋮ menu → Edit in YAML**
-4. Delete the placeholder YAML
-5. **Copy/paste the entire V34 script** (NHLGoalScoreV34.yaml)
+1. Go to **Settings → Automations & Scenes → Scripts**
+2. Click **+ Add Script** → **Create new script**
+3. Click the **⋮** menu → **Edit in YAML**
+4. Delete the placeholder YAML and paste all of `NHL_Goal_Celebration_Script.yaml`
+5. Change the **SETTINGS** block at the top (see the table below)
+6. Change the **YouTube video ID**: search the file for `media_id` and replace `3SeeHZQVgNQ` with your video ID
+7. Not using Amazon Polly? See [Change the TTS service](#change-the-tts-service)
+8. Click **Save**. Keep the name **NHL Goal Celebration**.
+9. Open the script's settings (⋮ → **Settings**) and check the entity ID is `script.nhl_goal_celebration`. The automations call it by that name.
 
-**Important Customizations:**
+**Settings block:**
 
-Before saving, update these lines to match YOUR devices:
+| Setting | What to put there | Example |
+|---|---|---|
+| `espn_sensor` | Your Team Tracker sensor | `sensor.lightning` |
+| `nhl_sensor` | Your hass-nhlapi sensor | `sensor.lightning_nhl` |
+| `speaker` | Your speaker/display | `media_player.google_home_display` |
+| `light` | Your light | `light.lr_lifx_1` |
+| `team_name` | Spoken in the announcement | `Tampa Bay Lightning` |
+| `team_color` | Team color as `[red, green, blue]`, 0–255 each | `[17, 0, 255]` |
+| `restore_color` | Color the light goes back to if it was on | `[255, 255, 255]` |
+| `stream_delay_seconds` | How far your stream is behind live | `45` |
+| `goal_video_seconds` | How much of the video to play | `30` |
+| `tts_voice`, `tts_engine` | Amazon Polly voice options | `Matthew`, `neural` |
+| `debug_toggle` | The helper from Step 1 | `input_boolean.nhl_goal_debug_mode` |
 
-**Line 17:** Your Google Home/Chromecast entity
-```yaml
-entity_id: media_player.google_home_display  # ← Change this
-```
-
-**Lines 23, 35, 47, 53, 59, 67, 79, 85:** Your light entity
-```yaml
-entity_id: light.lr_lifx_1  # ← Change this (appears multiple times)
-```
-
-**Line 20:** Goal horn YouTube video (optional - change to your team's horn)
-```yaml
-media_content_id: "{\"app_name\": \"youtube\", \"media_id\": \"MBxxCDtBXlY\"}"
-                                                              # ↑ Video ID
-```
-
-**Lines 24-26, 40-44:** Team colors (optional - change RGB values)
-```yaml
-rgb_color:
-  - 17    # Red (0-255)
-  - 0     # Green (0-255)
-  - 255   # Blue (0-255)
-```
-
-**Lines 292, 302:** Your team name in TTS
-```yaml
-Tampa Bay Lightning goal!  # ← Change to your team
-```
-
-**Line 297:** TTS voice/engine (if using different TTS)
-```yaml
-voice: Matthew
-engine: neural
-```
-
-**Lines 327, 341:** Media player device_id (for turn_off commands)
-- Go to Settings → Devices → Find your Google Home
-- Copy the device ID from the URL
-- Replace `e1fdc7415c5e91f01e3d4ab7d05add84`
-
-6. Click **"SAVE"**
-7. Script name should be: **NHLGoalScoreV34**
+To find an entity ID, go to **Developer Tools → States** and type part of the name in the filter box.
 
 ---
 
-### Step 4: Create the Automation (Trigger)
+### Step 4: Create the Goal Trigger Automation
 
-This watches for score changes and calls the script.
+This watches your team's score and starts the script.
 
-**Instructions:**
-1. Go to **Settings → Automations & Scenes → Automations tab**
-2. Click **"+ CREATE AUTOMATION"**
-3. Click **"Start with an empty automation"**
-4. Click the **⋮ menu → Edit in YAML**
-5. Copy/paste this automation:
-
-```yaml
-alias: Lightning Score V34 Production
-description: Trigger goal celebration when Lightning scores
-triggers:
-  - entity_id: sensor.lightning
-    attribute: team_score
-    trigger: state
-    enabled: true
-conditions:
-  - condition: template
-    value_template: |-
-      {{ trigger.to_state.attributes.team_score | int > 
-         trigger.from_state.attributes.team_score | int }}
-  - condition: or
-    conditions:
-      - condition: state
-        entity_id: sensor.lightning
-        state: IN
-      - condition: state
-        entity_id: sensor.lightning
-        state: POST
-actions:
-  - action: script.nhlgoalscorev34
-    data: {}
-mode: single
-```
-
-**Important Customizations:**
-
-**Lines 4, 16:** Your ESPN sensor entity
-```yaml
-entity_id: sensor.lightning  # ← Change to your team's sensor
-```
-
-**Line 23:** Script name (must match Step 3)
-```yaml
-action: script.nhlgoalscorev34  # ← Must match your script name
-```
-
-6. Click **"SAVE"**
+1. Go to **Settings → Automations & Scenes → Automations**
+2. Click **+ Create Automation** → **Create new automation**
+3. Click the **⋮** menu → **Edit in YAML**
+4. Delete the placeholder YAML and paste all of `NHL_Goal_Automation.yaml`
+5. Replace `sensor.lightning` with your Team Tracker sensor in **all 3 places** (marked `# CHANGE`)
+6. Click **Save**
 
 ---
 
-### Step 5: Create the Win Celebration (Optional)
+### Step 5: Create the Win Celebration (Optional, Beta)
 
-Triggers a special blue light celebration after your team wins.
+After a win: the win video with flashing lights, then "Tampa Bay Lightning win! Final score 4 to 2. That is the game!"
 
-**Instructions:**
-1. Go to **Settings → Automations & Scenes → Automations tab**
-2. Click **"+ CREATE AUTOMATION"**
-3. Click **"Start with an empty automation"**
-4. Click the **⋮ menu → Edit in YAML**
-5. Copy/paste the Win Celebration automation YAML (if you have it)
+1. Create another automation the same way as Step 4, and paste `NHL_Win_Celebration.yaml`
+2. Replace `sensor.lightning` in the trigger
+3. Change the `variables` block (same values as the script's settings)
+4. Change the win video ID: search for `media_id` and replace `CLoov5iBXB4`
+5. Click **Save**
 
-**Note:** The win celebration was mentioned as "V1.4" but the specific YAML wasn't provided in this session. If you have it from the previous conversation, paste it here. Otherwise, the goal celebration is the main feature.
+If your team scores late or in overtime, the win celebration waits for the goal celebration to finish first, so they don't talk over each other.
+
+**Beta:** V1.6 hasn't run in a real game yet. Earlier versions did, and the parts it shares with the goal script are tested.
 
 ---
 
 ## 🧪 Testing
 
-### Verify Setup (Before a Game):
+### Before a Game
 
-**1. Check Debug Toggle:**
-- Settings → Devices & Services → Helpers
-- Find "NHL Goal Debug Mode"
-- Toggle it ON (for testing)
+1. Turn **NHL Goal Debug Mode** on.
+2. Check your sensors in **Developer Tools → States**.
+3. Optional manual test: **Developer Tools → Actions** → `script.nhl_goal_celebration` → **Perform action**. You should get:
+   - about 45 seconds of nothing (the delay and the ESPN check)
+   - the goal video and flashing lights for 30 seconds
+   - possibly an announcement: if the NHL API still has your team's last goal and the score matches, it announces that goal. Otherwise there's no announcement.
+   - the debug notification at the end (about 1½ to 2 minutes after starting)
 
-**2. Check Your Sensors:**
-- Developer Tools → States
-- Find `sensor.lightning` (or your team)
-- Verify it shows game data when there's a game
+### During a Game
 
-**3. Manual Test (Optional):**
-- Developer Tools → Services
-- Service: `script.nhlgoalscorev34`
-- Click "CALL SERVICE"
-- You should see/hear:
-  - 45-second delay (ESPN polling loop running)
-  - Goal horn plays
-  - Lights flash blue
-  - Debug notification (if toggle is ON)
-  - No TTS (because no real goal data)
+With debug mode on, after each goal you should hear the video and announcements and see a **Goal Debug - V36** notification. An example (shortened):
 
----
-
-### During a Game:
-
-**First Goal Test:**
-1. Make sure debug mode is **ON**
-2. Wait for your team to score
-3. You should see:
-   - Goal horn after ~45 seconds
-   - Lights flash in team colors
-   - TTS announces scorer, assists, period
-   - Debug notification with all data
-
-**What the Debug Shows:**
 ```
 === DATA SOURCE: ESPN ===
+
 ESPN Loop Results:
 - Data captured: ESPN
-- Iteration: 6
-- Raw last_play: Nikita Kucherov Goal (20) Wrist Shot, assists: Steven Stamkos (15), Victor Hedman (30)
+- Iteration: 4
+- Raw last_play: Brandon Hagel Goal (5) Wrist Shot, assists: none
 
 NHL API Fallback Check:
 - Has scorer: True
-- Is Lightning goal: True
+- Is our team's goal: True
+- Fallback valid: True
 - Fallback used: False
 
 Final Goal Data:
-- Scorer: Nikita Kucherov
-- Period: 2 (second period)
-- Clock: 14:32
-- Assists: Steven Stamkos, Victor Hedman
+- Scorer: Brandon Hagel
+- Period: 1 (first period)
+- Clock: 13:30
+
+Assists:
+- Has assists: True
+- Assist 1: Brayden Point (#21)
+- Assist 2: Jake Guentzel (#59)
+- NHL re-read: Brayden Point, Jake Guentzel (NHL score 1, waited 6 s)
 ```
 
-**If Everything Works:** Turn debug mode **OFF** for silent operation!
+- **DATA SOURCE** tells you where the scorer came from: `ESPN`, `NHL_API` (the fallback) or `none` (nothing found, so no announcement).
+- **Iteration** is which 5-second ESPN check first found the goal (1–9).
+- **NHL re-read** shows the assists found when the NHL API was checked again, and how long it waited for them.
+
+Once everything works, turn debug mode **off** if you don't want the notifications.
 
 ---
 
-## 🎛️ Customization Options
+## 🎛️ Customization
 
-### Change Team Colors:
+### Team colors
 
-Edit the script RGB values (lines 24-26, 40-44):
+Set `team_color` in the script and the win celebration:
 
-**Popular NHL Team Colors:**
 ```yaml
-# Tampa Bay Lightning (Blue)
-rgb_color: [17, 0, 255]
+# Tampa Bay Lightning (blue)
+team_color: [17, 0, 255]
 
-# Toronto Maple Leafs (Blue)
-rgb_color: [0, 32, 91]
+# Toronto Maple Leafs (blue)
+team_color: [0, 32, 91]
 
-# Montreal Canadiens (Red)
-rgb_color: [175, 30, 45]
+# Montreal Canadiens (red)
+team_color: [175, 30, 45]
 
-# Boston Bruins (Gold/Yellow)
-rgb_color: [252, 181, 20]
+# Boston Bruins (gold)
+team_color: [252, 181, 20]
 
-# New York Rangers (Blue)
-rgb_color: [0, 56, 168]
+# New York Rangers (blue)
+team_color: [0, 56, 168]
 
-# Detroit Red Wings (Red)
-rgb_color: [206, 17, 38]
+# Detroit Red Wings (red)
+team_color: [206, 17, 38]
 ```
 
----
+Very dark colors (like the Leafs' navy) can look dim on a bulb; a brighter shade of the same color often looks better.
 
-### Change Goal Horn:
+### Goal video
 
-To use a different goal horn video (see Step 2 for finding videos):
+Search the script for `media_id` and replace the video ID (Step 2). Change `goal_video_seconds` to play more or less of it.
 
-1. Find your preferred goal horn video on YouTube
-2. Extract the Video ID from the URL (see Step 2 instructions)
-   - Example: `https://www.youtube.com/watch?v=ABC123XYZ`
-   - Video ID is: `ABC123XYZ`
+### Streaming delay
 
-3. Update line 20 in the script:
-```yaml
-media_content_id: "{\"app_name\": \"youtube\", \"media_id\": \"YOUR_VIDEO_ID\"}"
-```
+Change `stream_delay_seconds` to match how far your TV or stream is behind live (30–60 seconds is typical). Start with 45 and adjust after a game or two: if the video starts before you see the goal on TV, make it longer.
 
-Replace `YOUR_VIDEO_ID` with the ID you copied.
+The ESPN check always runs for 45 seconds whatever this is set to, and the announcement comes only after both the check and the video have finished.
 
----
+### Change the TTS service
 
-### Adjust Streaming Delay:
+The script and win celebration use `tts.amazon_polly_say`. To use another service, search each file for `amazon_polly_say` (2 places in the script, 1 in the win celebration). For each one:
+- change the action, for example to `tts.google_translate_say`
+- delete the `options:` lines under it (voice and engine are Amazon Polly options)
 
-If your streaming service has more/less delay than 45 seconds:
+Amazon Polly voices to try: **Matthew** (male), **Joanna** (female), **Joey** (male), all with `engine: neural`.
 
-**Line 14 in script:**
-```yaml
-- delay:
-    seconds: 45  # ← Change this (30-60 typical range)
-```
+### More than one light
 
----
-
-### Change TTS Voice:
-
-If using Amazon Polly, available voices:
-- **Matthew** (Male, Neural) - Used in this guide
-- **Joanna** (Female, Neural)
-- **Joey** (Male, Neural)
-
-Update lines 297-298:
-```yaml
-voice: Matthew  # ← Change this
-engine: neural
-```
+Set `light` to a light group (Settings → Devices & Services → Helpers → Create Helper → Group → Light group) to flash several lights together.
 
 ---
 
 ## 🔧 Troubleshooting
 
-### No Celebration Happens:
+### No celebration at all
 
-**Check these:**
-1. **Is there a game today?**
-   - Sensor won't trigger without active game
-   - Check: Developer Tools → States → `sensor.lightning`
+1. **Is a game on?** The automation only runs while your Team Tracker sensor's state is `IN` (or just after, `POST`).
+2. **Is the automation on?** Settings → Automations → check it isn't disabled.
+3. **Does the script's entity ID match?** It must be `script.nhl_goal_celebration` (Step 3, item 9).
+4. **Check the trace:** Settings → Automations → your automation → ⋮ → **Traces** shows each run and why it stopped.
+5. **Check the logs:** Settings → System → Logs.
 
-2. **Is the automation enabled?**
-   - Settings → Automations → Find your automation
-   - Make sure it's not disabled
+### Video plays but no announcement
 
-3. **Does the script exist?**
-   - Settings → Scripts → Look for "NHLGoalScoreV34"
+1. Turn debug mode on and look at the notification. `DATA SOURCE: none` means neither ESPN nor the NHL API had the goal details in time.
+2. Test the TTS service by itself: Developer Tools → Actions → `tts.amazon_polly_say` (or yours).
+3. Make sure the speaker is online.
 
-4. **Check the logs:**
-   - Settings → System → Logs
-   - Look for errors mentioning your script/automation
+### Announcement is cut off
 
----
+Make sure you're on V36 (the debug title says "Goal Debug - V36"). Earlier versions turned the speaker off after a fixed 10 seconds.
 
-### Horn Plays But No TTS:
+### No assists announced
 
-**Possible causes:**
-1. **Script couldn't find goal data**
-   - Enable debug mode to see what data was captured
-   - Check if `goal_scorer` = "Unknown"
+Unassisted goals have none, of course. Otherwise, the NHL API sometimes posts assists more than 80–90 seconds after the goal, which is later than the script waits. The **NHL re-read** line in the debug notification shows what it found.
 
-2. **TTS service not configured**
-   - Verify Amazon Polly (or your TTS) is set up
-   - Test TTS manually: Developer Tools → Services → `tts.amazon_polly_say`
+### "period 2" instead of "second period"
 
-3. **Media player unavailable**
-   - Check if Google Home is online
-   - Try playing something else to it
+You're on a version older than V34. Update to the current script.
 
----
+### Lights don't flash
 
-### Wrong Period Announced:
+1. Check `light` in the settings matches your light's entity ID.
+2. Check the light is powered and responds in Home Assistant.
+3. White-only bulbs flash but don't show team colors.
 
-If you hear "period 2" instead of "second period":
-- You might be running V33 instead of V34
-- Verify your script has the `| trim` filters on lines 112, 183, and 188
+### Second goal not celebrated
+
+A celebration takes about 2 minutes, and a new goal during that time is skipped (see Known Limitations below).
 
 ---
 
-### Lights Don't Flash:
+## 📊 How It Works
 
-**Check:**
-1. **Light entity ID correct?**
-   - Verify line 23: `entity_id: light.lr_lifx_1` matches YOUR light
+**The challenge:** ESPN's `last_play` updates at unpredictable times. Sometimes it shows the goal right away, sometimes after 30+ seconds, and sometimes (for example some overtime winners) never.
 
-2. **Light supports RGB?**
-   - Some smart bulbs are white-only
-   - Script requires color support
+**The solution:** check repeatedly while waiting for the stream delay, with the NHL API as a backup.
 
-3. **Light is powered on?**
-   - Physical power switch must be on
-   - HA can't control unpowered lights
-
----
-
-## 📊 How It Works (ESPN Polling Loop)
-
-**The Challenge:** ESPN updates their `last_play` field at unpredictable speeds. Sometimes it shows the goal immediately, sometimes it takes 30+ seconds.
-
-**The Solution:** A polling loop that checks repeatedly until the goal data appears.
-
-**How it works:**
-1. When `team_score` increases (goal scored), automation triggers
-2. Script waits 45 seconds for streaming delay
-3. Meanwhile, the polling loop checks ESPN's `last_play` every 5 seconds:
-   - **Iteration 1:** Check for "Goal" text → Not found, wait 5 seconds
-   - **Iteration 2:** Check again → Not found, wait 5 seconds
-   - **Iteration 3:** Check again → **Found!** → Capture data, exit loop
-4. If ESPN never shows the goal (rare), NHL API provides fallback data
-5. Parse scorer, assists, period, time
-6. Play celebrations with captured data
-
-**Result:** 97.6% success rate across 40+ goals tested!
+1. Your team's ESPN `team_score` goes up → the automation starts the script.
+2. Two things run at the same time:
+   - **the stream delay** (45 s), then the goal video and flashing lights (30 s)
+   - **the ESPN check**: 9 checks of `last_play`, 5 seconds apart (45 s). It always runs all 9. Each one that finds "Goal" updates the play text, but the clock and period are kept from the **first** one, so the announced time is when the goal happened.
+3. If ESPN never showed the goal, the **NHL API** is used, but only if it says the goal was your team's and its score matches ESPN's.
+4. The video stops and the scorer is announced. The script waits for the speech to finish before turning the speaker off.
+5. If there are no assists yet, it waits up to 20 seconds for the NHL API to post them, checks again, and announces them.
+6. The debug notification is sent (if debug mode is on).
 
 ---
 
-## 🎉 Success Rate Data
+## ⚠️ Known Limitations
 
-**Tested:** December 2025 - January 2026  
-**Games:** 10+  
-**Goals:** 40+  
-**Success Rate:** 97.6%
-
-**Typical Results:**
-- **Iteration 0-6:** ESPN found goal quickly (most common)
-- **Iteration 7-9:** ESPN was slow but polling loop caught it
-- **NHL API Fallback:** Used when ESPN completely failed
-
-**Known Limitations:**
-- **Shootout goals:** Don't trigger (NHL rule: shootouts aren't "goals")
-- **Rapid goals:** < 10 seconds apart may queue celebrations
-
----
-
-## 📅 Future Plans
-
-Before NHL Playoffs (April 2026):
-- Research playoff overtime rules (unlimited 20-min periods)
-- Test automation behavior during playoff OT
-- Create Home Assistant Blueprint
-- Share with community on GitHub
+- **Goals close together:** a celebration takes about 2 minutes, and a second goal during that time doesn't get its own celebration. (The automation's `mode: single` also stops a score that briefly flickers from being celebrated twice.)
+- **Opponent scores right after you:** if the other team scores within about 45 seconds, ESPN's latest play may be their goal and the wrong scorer could be announced. Rare.
+- **No clock from the NHL API:** when the fallback is used, the announcement gives the period but not the time.
+- **Late assists:** assists posted more than about 80–90 seconds after the goal are missed.
+- **Shootouts:** not tested.
+- **Playoff overtime:** periods 5 and 6 are announced as "second overtime" and "third overtime"; later ones as "period 7" and so on.
 
 ---
 
 ## 📄 License
 
-Feel free to use, modify, and share! Attribution appreciated but not required.
+MIT - see [LICENSE](LICENSE). Free to use, modify, and share.
 
-**Support:** If this brings stadium excitement to your home, consider sharing your success story with the HA community!
+**Support:** If this brings stadium excitement to your home, share your success story with the HA community!
 
 ---
 
