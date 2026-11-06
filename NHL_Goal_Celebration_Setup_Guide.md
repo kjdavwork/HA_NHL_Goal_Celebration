@@ -2,7 +2,7 @@
 
 Transform your home into a stadium! Get a goal video, flashing lights, and announcements when your favorite NHL team scores, timed to match your TV stream.
 
-**Version:** goal script V36, win celebration V1.6 (beta). See [CHANGELOG.md](CHANGELOG.md).
+**Version:** goal script V36, win celebration V1.6. See [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -12,7 +12,7 @@ When your NHL team scores a goal:
 1. **🔊 Goal video** - a YouTube goal horn/song plays on your speaker for 30 seconds, starting about 45 seconds after the goal (to line up with your stream)
 2. **💡 Light show** - your light flashes in team colors while the video plays
 3. **📢 Announcement** - "Tampa Bay Lightning goal! At 14:32 of the second period. Scored by Nikita Kucherov!" followed by "Assisted by Brandon Hagel, and Victor Hedman!"
-4. **🎊 Win celebration (optional, beta)** - a win video, light show and the final score after a win
+4. **🎊 Win celebration (optional)** - a win video, light show and the final score after a win
 
 **Features:**
 - ✅ Natural period names ("first period" not "period 1", "overtime")
@@ -144,7 +144,7 @@ This watches your team's score and starts the script.
 
 ---
 
-### Step 5: Create the Win Celebration (Optional, Beta)
+### Step 5: Create the Win Celebration (Optional)
 
 After a win: the win video with flashing lights, then "Tampa Bay Lightning win! Final score 4 to 2. That is the game!"
 
@@ -155,8 +155,6 @@ After a win: the win video with flashing lights, then "Tampa Bay Lightning win! 
 5. Click **Save**
 
 If your team scores late or in overtime, the win celebration waits for the goal celebration to finish first, so they don't talk over each other.
-
-**Beta:** V1.6 hasn't run in a real game yet. Earlier versions did, and the parts it shares with the goal script are tested.
 
 ---
 

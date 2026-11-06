@@ -1,12 +1,8 @@
 # =============================================================================
-# NHL Win Celebration (V1.6 - BETA)
+# NHL Win Celebration (V1.6)
 # =============================================================================
 # When the game ends with your team ahead: plays a win video on the speaker
 # with flashing lights, then announces the final score.
-#
-# BETA: V1.6 hasn't run in a real game yet. Earlier versions did, and the
-# pieces it shares with the goal script (video, light flashing, waiting for
-# the speech to finish) are tested.
 #
 # Install: Settings -> Automations & Scenes -> + Create Automation ->
 #          Create new automation -> (three-dot menu) Edit in YAML -> paste -> Save.

@@ -12,7 +12,7 @@ When your NHL team scores:
 - 🔊 **Goal video plays** on your speaker or display, about 45 seconds after the goal so it lines up with your stream
 - 💡 **Smart lights flash** in team colors
 - 📢 **TTS announces** the scorer, time and period, then the assists
-- 🏆 **Win celebration** with a win video, light show and the final score (beta)
+- 🏆 **Win celebration** with a win video, light show and the final score
 
 ---
 
@@ -48,7 +48,7 @@ When your NHL team scores:
 |---|---|
 | `NHL_Goal_Celebration_Script.yaml` | The main goal celebration script |
 | `NHL_Goal_Automation.yaml` | Automation that starts the script when your team's score goes up |
-| `NHL_Win_Celebration.yaml` | Win celebration automation (optional, beta) |
+| `NHL_Win_Celebration.yaml` | Win celebration automation (optional) |
 | `NHL_Goal_Celebration_Setup_Guide.md` | Step-by-step installation and customization |
 | `CHANGELOG.md` | What changed in each version |
 
@@ -82,8 +82,8 @@ When your team's score goes up, the script:
 ## 🏒 Tested With
 
 - **V34 (2025–26 season):** 10+ games, 40+ goals, 97.6% of goals announced correctly
-- **V36 (2026–27 season):** working live on 6+ goals as of October 2026
-- **Win celebration V1.6:** not yet run in a real game (beta)
+- **V36 (2026–27 season):** working live on 10+ goals as of November 2026
+- **Win celebration V1.6:** worked in its first real game (November 5, 2026)
 
 ---
 
