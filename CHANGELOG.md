@@ -1,5 +1,10 @@
 # Changelog
 
+## v36.1 (November 2026)
+
+- **Win celebration V1.6 is no longer beta.** It ran in a real game on November 5, 2026: the win video, light show and the full final-score announcement all worked.
+- Documentation only. No changes to the YAML files apart from removing the beta note from the win celebration's header comment.
+
 ## Goal script V36 / Win celebration V1.6 (October 2026)
 
 Last season's files are kept under the [`v34-2025-26-season`](https://github.com/kjdavwork/HA_NHL_Goal_Celebration/tree/v34-2025-26-season) tag.
@@ -21,12 +26,11 @@ Last season's files are kept under the [`v34-2025-26-season`](https://github.com
 ### Goal automation
 - Calls `script.nhl_goal_celebration`.
 
-### Win celebration (V1.5 and V1.6, beta)
+### Win celebration (V1.5 and V1.6)
 - **Trigger changed** to the game going from in progress to final, so overtime and shootout wins count. (V1.4 waited for the clock to say exactly "Final".)
 - **Waits for the goal celebration to finish** (up to 3 minutes), so a late or overtime winner and the win celebration don't overlap.
 - **Win video** plays on the speaker for `win_video_seconds` (45 by default) while the lights flash, then the final score is announced.
 - Same speech wait fix and settings block as the goal script.
-- Not yet run in a real game.
 
 ## Goal script V34 (January 2026)
 - Fixed the period name comparison ("period 2" instead of "second period").
